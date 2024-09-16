@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 import requests
 import json
+import streamlit as st
 
 load_dotenv()
 # openai.api_key = os.environ.get("OPENAI_API_KEY")
@@ -62,15 +63,12 @@ def get_news(topic):
     except requests.exceptions.RequestException as e:
         print("Error occured during API request", e)
 
-def main():
-    news = get_news("bitcoin")
-    print(news[0])
 
 
 
 class AssistantManager:
-    thread_id = None
-    assistant_id = None
+    thread_id = "thread_Ql3dNxJPzytuW2zP9akRPJ9t"
+    assistant_id = "asst_qf80JuhErrrlr4jMmNrj84Fi"
 
     def __init__(self, model: str = model) -> None:
         self.client = client
@@ -174,8 +172,12 @@ class AssistantManager:
             run_id=self.run.id,
             tool_outputs=tool_outputs
         )
+    
+    # for streamlit
+    def get_summary(self):
+        return self.summary
 
-    def wait_for_completed(self):
+    def wait_for_completion(self):
         if self.thread and self.run:
             while True:
                 time.sleep(5)
@@ -193,6 +195,79 @@ class AssistantManager:
                     self.call_required_functions(
                         required_actions = run_status.required_action.submit_tool_outputs.model_dump()
                     )
+    
+
+    # Run the steps
+    def run_steps(self):
+        run_steps = self.client.beta.threads.runs.steps.list(
+            thread_id=self.thread.id,
+            run_id=self.run.id
+        )
+
+        print(f"Run-Steps::: {run_steps}")
+
+        return run_steps
+
+
+def main():
+    # news = get_news("bitcoin")
+    # print(news[0])
+
+    manager = AssistantManager()
+
+    # streamlit interface
+
+    st.title("New Summarizer")
+
+    with st.form(key="user_input_form"):
+        instructions = st.text_input("Enter topic:")
+        submit_button = st.form_submit_button(label="Run Assistant")
+
+        if submit_button:
+            manager.create_assistant(
+                name="News Summarizer",
+                instructions="You are a personal article summarizer Assistant who knows how to take a list of articles' titles and descriptions and write a short summary of all the news articles",
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_news",
+                            "description": "Get the list of articles/news for the given topic",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "topic": {
+                                        "type": "string",
+                                        "description": "The topic for the news, e.g. bitcoin"
+                                    }
+                                },
+                                "required": ["topic"],
+                            }    
+                        }
+                    }
+                ]
+            )
+            manager.create_thread()
+
+            # add the message and run the assistant
+            manager.add_message_to_thread(
+                role="user",
+                content=f"summerize the news on this topic {instructions}"
+            )
+
+            manager.run_assistant(instructions="Summarize the news")
+
+            # wait for completions and process messages
+            manager.wait_for_completion()
+
+            summary = manager.get_summary()
+
+            st.write(summary)
+
+            st.text("Run Steps:")
+            st.code(manager.run_steps(), line_numbers=True)
+    
+
 
 
 if __name__ == "__main__":
